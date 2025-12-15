@@ -106,8 +106,9 @@ class ExtraInfoWrapper(gym.Wrapper):
     TIMER_HUNDREDS = 0x0F31
     TIMER_TENS = 0x0F32
     TIMER_ONES = 0x0F33
-    X_POS_HIGH = 0x0094
-    X_POS_LOW = 0x0095
+    # In SMW RAM, $0094 stores the low byte and $0095 stores the high byte.
+    X_POS_LOW = 0x0094
+    X_POS_HIGH = 0x0095
 
     def __init__(self, env):
         super().__init__(env)
@@ -130,8 +131,8 @@ class ExtraInfoWrapper(gym.Wrapper):
     def _read_x_pos(self, ram):
         if ram is None:
             return None
-        high = int(ram[self.X_POS_HIGH])
         low = int(ram[self.X_POS_LOW])
+        high = int(ram[self.X_POS_HIGH])
         return (high << 8) | low
 
     def _inject_extra(self, info):
@@ -172,9 +173,9 @@ class RewardOverrideWrapper(gym.Wrapper):
     def __init__(
         self,
         env,
-        progress_scale: float = 5e-4,
-        time_penalty: float = -0.5,
-        score_scale: float = 1.0,
+        progress_scale: float = 1e-2,
+        time_penalty: float = -0.25,
+        score_scale: float = 1.5,
         death_penalty: float = -10.0,
         timeout_penalty: float = 0.0,
         win_reward: float = 400.0,

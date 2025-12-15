@@ -6,12 +6,12 @@ from typing import List
 import numpy as np
 import gymnasium as gym
 import retro
+import imageio.v2 as imageio
+from PIL import Image, ImageDraw, ImageFont
 
-from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import (
     DummyVecEnv,
     SubprocVecEnv,
-    VecVideoRecorder,
 )
 from control import (
     COMBOS,
@@ -22,7 +22,7 @@ from control import (
     InfoLogger,
     PreprocessObsWrapper,
 )
-from custom_policy import VisionBackbonePolicy
+from custom_policy import VisionBackbonePolicy, CustomPPO
 def make_base_env(game: str, state: str):
     env = retro.make(game=game, state=state, render_mode="rgb_array")
     env = PreprocessObsWrapper(env)
@@ -30,7 +30,6 @@ def make_base_env(game: str, state: str):
     env = ExtraInfoWrapper(env)
     env = LifeTerminationWrapper(env)
     env = RewardOverrideWrapper(env)
-    env = InfoLogger(env)
     return env
 
 
@@ -50,7 +49,7 @@ def make_vec_env(game: str, state: str, n_envs: int, use_subproc: bool = True):
 
     return vec_env
 
-def evaluate_policy(model: PPO, game: str, state: str, n_episodes: int, max_steps: int):
+def evaluate_policy(model: CustomPPO, game: str, state: str, n_episodes: int, max_steps: int):
     env = make_base_env(game, state)
 
     returns = []
@@ -74,26 +73,74 @@ def evaluate_policy(model: PPO, game: str, state: str, n_episodes: int, max_step
     best_ret = float(np.max(returns)) if returns else 0.0
     return mean_ret, best_ret
 
-def record_video(model: PPO, game: str, state: str, out_dir: str, video_len: int, prefix: str):
+def _format_info(info: dict, max_len: int = 120) -> str:
+    if not isinstance(info, dict) or not info:
+        return "{}"
+    parts = []
+    total_len = 0
+    for key, value in info.items():
+        fragment = f"{key}={value}"
+        if total_len + len(fragment) > max_len:
+            parts.append("...")
+            break
+        parts.append(fragment)
+        total_len += len(fragment) + 2
+    return "{" + ", ".join(parts) + "}"
+
+
+def _annotate_frame(frame: np.ndarray, cumulative_reward: float, last_reward: float, info: dict, font: ImageFont.ImageFont) -> np.ndarray:
+    img = Image.fromarray(frame)
+    draw = ImageDraw.Draw(img)
+    info_str = _format_info(info)
+    lines = [
+        f"reward={last_reward:.3f}",
+        f"cum_reward={cumulative_reward:.3f}",
+        f"info: {info_str}",
+    ]
+    padding = 4
+    bbox_sample = draw.textbbox((0, 0), "Ag", font=font)
+    line_height = bbox_sample[3] - bbox_sample[1]
+    line_widths = []
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        line_widths.append(bbox[2] - bbox[0])
+    box_width = max(line_widths) + padding * 2
+    box_height = line_height * len(lines) + padding * (len(lines) + 1)
+    draw.rectangle([0, 0, box_width, box_height], fill=(0, 0, 0, 200))
+    y = padding
+    for line in lines:
+        draw.text((padding, y), line, fill=(255, 255, 255), font=font)
+        y += line_height + padding
+    return np.array(img)
+
+
+def record_video(model: CustomPPO, game: str, state: str, out_dir: str, video_len: int, prefix: str):
     os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, f"{prefix}.mp4")
 
-    vec_env = make_vec_env(game, state, n_envs=1)
-    vec_env = VecVideoRecorder(
-        vec_env,
-        out_dir,
-        record_video_trigger=lambda step: step == 0,
-        video_length=video_len,
-        name_prefix=prefix,
-    )
+    env = make_base_env(game, state)
+    fps = env.metadata.get("render_fps", 60)
+    writer = imageio.get_writer(out_path, fps=fps)
+    font = ImageFont.load_default()
 
-    obs = vec_env.reset()
+    obs, info = env.reset()
+    cumulative_reward = 0.0
     for _ in range(video_len):
         action, _ = model.predict(obs, deterministic=True)
-        obs, _, dones, _ = vec_env.step(action)
-        if dones[0]:
-            obs = vec_env.reset()
+        obs, reward, terminated, truncated, info = env.step(action)
+        frame = env.render()
+        if frame is None:
+            continue
+        cumulative_reward += float(reward)
+        annotated = _annotate_frame(frame, cumulative_reward, float(reward), info, font)
+        writer.append_data(annotated)
+        if terminated or truncated:
+            obs, info = env.reset()
+            cumulative_reward = 0.0
 
-    vec_env.close()
+    writer.close()
+    env.close()
+    print(f"Saved video to {out_path}")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -103,8 +150,8 @@ def main():
     parser.add_argument("--train-chunk", type=int, default=50_000)   # 每段訓練多久就 eval + record
     parser.add_argument("--n-envs", type=int, default=4)
     parser.add_argument("--eval-episodes", type=int, default=3)
-    parser.add_argument("--eval-max-steps", type=int, default=4000)
-    parser.add_argument("--record-steps", type=int, default=3000)
+    parser.add_argument("--eval-max-steps", type=int, default=18000)
+    parser.add_argument("--record-steps", type=int, default=18000)
     parser.add_argument("--logdir", type=str, default="./runs_smw")
     args = parser.parse_args()
 
@@ -115,15 +162,17 @@ def main():
 
     train_env = make_vec_env(args.game, args.state, n_envs=args.n_envs)
 
-    model = PPO(
+    model = CustomPPO(
         VisionBackbonePolicy,
         train_env,
         policy_kwargs=dict(normalize_images=False),
-        verbose=1,
-        n_steps=256,
+        n_epochs=10,
+        n_steps=512,
         batch_size=256,
-        learning_rate=2.5e-4,
+        learning_rate=1e-4,
         gamma=0.99,
+        kl_coef=1,
+        clip_range=0.5,
         tensorboard_log=os.path.join(args.logdir, "tb"),
     )
 
@@ -139,7 +188,7 @@ def main():
         model.learn(total_timesteps=chunk, reset_num_timesteps=False)
         trained += chunk
 
-        ckpt_path = os.path.join(ckpt_dir, f"ppo_step_{trained}.zip")
+        ckpt_path = os.path.join(ckpt_dir, f"CustomPPO_step_{trained}.zip")
         model.save(ckpt_path)
         print(f"Saved checkpoint: {ckpt_path}")
 
@@ -158,18 +207,15 @@ def main():
             model.save(best_path)
             print(f"New best mean_return={best_mean:.3f} -> saved {best_path}")
 
-            prefix = f"best_step_{trained}_mean_{best_mean:.2f}"
-            print(f"Recording video: {prefix} ({args.record_steps} steps)")
-            record_video(
-                model,
-                args.game,
-                args.state,
-                video_dir,
-                video_len=args.record_steps,
-                prefix=prefix,
-            )
-        else:
-            print("No improvement, skip recording this round.")
+
+        record_video(
+            model,
+            args.game,
+            args.state,
+            video_dir,
+            video_len=args.record_steps,
+            prefix=f"step_{trained}_mean_{mean_ret:.2f}",
+        )
 
     train_env.close()
 
