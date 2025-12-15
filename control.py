@@ -1,5 +1,33 @@
 import numpy as np
 import gymnasium as gym
+import torchvision.transforms as T
+
+
+class PreprocessObsWrapper(gym.ObservationWrapper):
+    """Fixed preprocessing: resize to 224, normalize to [-1,1], output CHW float32."""
+
+    def __init__(self, env):
+        super().__init__(env)
+        obs_space = env.observation_space
+        if not isinstance(obs_space, gym.spaces.Box):
+            raise TypeError("PreprocessObsWrapper requires a Box observation space")
+        self.resize_shape = (224, 224)
+        c = obs_space.shape[2]
+        low = np.full((c, 224, 224), -1.0, dtype=np.float32)
+        high = np.full((c, 224, 224), 1.0, dtype=np.float32)
+        self.observation_space = gym.spaces.Box(low=low, high=high, dtype=np.float32)
+
+        transforms = []
+        transforms.append(T.ToTensor())  # -> float CHW in [0,1]
+        transforms.append(T.Resize(self.resize_shape, antialias=True))
+        transforms.append(T.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]))
+        transforms.append(T.Lambda(lambda x: x.numpy()))
+        self.pipeline = T.Compose(transforms)
+
+    def observation(self, observation):
+        return self.pipeline(observation)
+
+
 
 class DiscreteActionWrapper(gym.ActionWrapper):
     """
@@ -34,9 +62,8 @@ class DiscreteActionWrapper(gym.ActionWrapper):
     
 
 class LifeTerminationWrapper(gym.Wrapper):
-    def __init__(self, env, death_penalty=0):
+    def __init__(self, env):
         super().__init__(env)
-        self.death_penalty = float(death_penalty)
         self._prev_lives = None
 
     def _get_lives(self, info):
@@ -63,7 +90,6 @@ class LifeTerminationWrapper(gym.Wrapper):
         self._prev_lives = lives
 
         if died:
-            reward = float(reward) + self.death_penalty
             terminated = True
             if isinstance(info, dict):
                 info = dict(info)
@@ -149,8 +175,8 @@ class RewardOverrideWrapper(gym.Wrapper):
         progress_scale: float = 5e-4,
         time_penalty: float = -0.5,
         score_scale: float = 1.0,
-        death_penalty: float = -50.0,
-        timeout_penalty: float = -10.0,
+        death_penalty: float = -10.0,
+        timeout_penalty: float = 0.0,
         win_reward: float = 400.0,
     ):
         super().__init__(env)

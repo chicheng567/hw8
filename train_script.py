@@ -11,7 +11,6 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import (
     DummyVecEnv,
     SubprocVecEnv,
-    VecTransposeImage,
     VecVideoRecorder,
 )
 from control import (
@@ -21,12 +20,15 @@ from control import (
     ExtraInfoWrapper,
     RewardOverrideWrapper,
     InfoLogger,
+    PreprocessObsWrapper,
 )
+from custom_policy import VisionBackbonePolicy
 def make_base_env(game: str, state: str):
     env = retro.make(game=game, state=state, render_mode="rgb_array")
+    env = PreprocessObsWrapper(env)
     env = DiscreteActionWrapper(env, COMBOS)
     env = ExtraInfoWrapper(env)
-    env = LifeTerminationWrapper(env, death_penalty=0)
+    env = LifeTerminationWrapper(env)
     env = RewardOverrideWrapper(env)
     env = InfoLogger(env)
     return env
@@ -46,7 +48,6 @@ def make_vec_env(game: str, state: str, n_envs: int, use_subproc: bool = True):
     else:
         vec_env = DummyVecEnv(env_fns)
 
-    vec_env = VecTransposeImage(vec_env)
     return vec_env
 
 def evaluate_policy(model: PPO, game: str, state: str, n_episodes: int, max_steps: int):
@@ -115,8 +116,9 @@ def main():
     train_env = make_vec_env(args.game, args.state, n_envs=args.n_envs)
 
     model = PPO(
-        "CnnPolicy",
+        VisionBackbonePolicy,
         train_env,
+        policy_kwargs=dict(normalize_images=False),
         verbose=1,
         n_steps=256,
         batch_size=256,
