@@ -2,14 +2,12 @@ import os
 import argparse
 from typing import Tuple
 import numpy as np
-import retro
 from custom_policy import CustomPPO
-from train_script import make_base_env
 from PIL import Image, ImageDraw, ImageFont
 import imageio.v2 as imageio
+from wrappers import make_base_env
 def evaluate_policy(model: CustomPPO, game: str, state: str, n_episodes: int, max_steps: int):
     env = make_base_env(game, state)
-
     returns = []
     for _ in range(n_episodes):
         obs, info = env.reset()

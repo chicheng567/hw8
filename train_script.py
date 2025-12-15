@@ -7,26 +7,9 @@ from stable_baselines3.common.vec_env import (
 )
 from eval import evaluate_policy, record_video
 from wrappers import (
-    COMBOS,
-    DiscreteActionWrapper,
-    LifeTerminationWrapper,
-    ExtraInfoWrapper,
-    AuxObservationWrapper,
-    RewardOverrideWrapper,
-    InfoLogger,
-    PreprocessObsWrapper,
+    make_base_env,
 )
 from custom_policy import VisionBackbonePolicy, CustomPPO
-def make_base_env(game: str, state: str):
-    env = retro.make(game=game, state=state, render_mode="rgb_array")
-    env = PreprocessObsWrapper(env)
-    env = DiscreteActionWrapper(env, COMBOS)
-    env = ExtraInfoWrapper(env)
-    env = LifeTerminationWrapper(env)
-    env = RewardOverrideWrapper(env)
-    env = AuxObservationWrapper(env)
-    return env
-
 
 def _make_env_thunk(game: str, state: str):
     def _thunk():
@@ -72,12 +55,12 @@ def main():
         policy_kwargs=dict(normalize_images=False),
         n_epochs=10,
         n_steps=512,
-        batch_size=256,
-        learning_rate=1e-4,
+        batch_size=512,
+        learning_rate=3e-4,
         verbose=1,
         gamma=0.99,
-        kl_coef=1,
-        clip_range=0.5,
+        kl_coef=0,
+        clip_range=0.2,
         tensorboard_log=os.path.join(args.logdir, "tb"),
     )
 

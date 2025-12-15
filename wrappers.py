@@ -170,7 +170,7 @@ class AuxObservationWrapper(gym.Wrapper):
     Convert image observations into a dict that also exposes scalar features (step/time).
     """
 
-    def __init__(self, env, step_normalizer: float = 4000.0, time_normalizer: float = 400.0):
+    def __init__(self, env, step_normalizer: float = 18000.0, time_normalizer: float = 300.0):
         super().__init__(env)
         if not isinstance(env.observation_space, gym.spaces.Box):
             raise TypeError("AuxObservationWrapper expects a Box observation space as the image input")
@@ -213,11 +213,11 @@ class RewardOverrideWrapper(gym.Wrapper):
     def __init__(
         self,
         env,
-        progress_scale: float = 1e-2,
+        progress_scale: float = 2e-2,
         time_penalty: float = -0.25,
-        score_scale: float = 1.5,
-        death_penalty: float = -10.0,
-        timeout_penalty: float = 0.0,
+        score_scale: float = 2,
+        death_penalty: float = -12.0,
+        timeout_penalty: float = -5.0,
         win_reward: float = 400.0,
     ):
         super().__init__(env)
@@ -315,3 +315,13 @@ COMBOS = [
     ["LEFT", "B"],       # 11: 左 + 跑
     ["LEFT", "A", "B"],  # 12: 左 + 跳 + 跑
 ]
+import retro
+def make_base_env(game: str, state: str):
+    env = retro.make(game=game, state=state, render_mode="rgb_array")
+    env = PreprocessObsWrapper(env)
+    env = DiscreteActionWrapper(env, COMBOS)
+    env = ExtraInfoWrapper(env)
+    env = LifeTerminationWrapper(env)
+    env = RewardOverrideWrapper(env)
+    env = AuxObservationWrapper(env)
+    return env
