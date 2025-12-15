@@ -1,18 +1,17 @@
-from typing import Any
+from typing import Any, Optional, Union
 
+import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import timm
-from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
+import warnings
 from gymnasium import spaces
+from stable_baselines3.common.buffers import RolloutBuffer
+from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from stable_baselines3.common.policies import ActorCriticPolicy
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
-from stable_baselines3.common.buffers import RolloutBuffer
-from typing import Any, ClassVar, Optional, TypeVar, Union
-import torch
-import warnings
-import numpy as np
+from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
 from stable_baselines3.common.utils import FloatSchedule, explained_variance
 class VisionBackboneExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space: spaces.Box):
@@ -38,9 +37,31 @@ class VisionBackboneExtractor(BaseFeaturesExtractor):
         return pooled
 
 
+class VisionScalarExtractor(BaseFeaturesExtractor):
+    def __init__(self, observation_space: spaces.Dict):
+        assert isinstance(observation_space, spaces.Dict), "VisionScalarExtractor expects a Dict observation space"
+        image_space = observation_space["image"]
+        scalar_space = observation_space["scalars"]
+        super().__init__(observation_space, features_dim=1)
+        self.image_extractor = VisionBackboneExtractor(image_space)
+        scalar_dim = int(np.prod(scalar_space.shape))
+        self.scalar_net = nn.Sequential(
+            nn.Linear(scalar_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, 64),
+            nn.ReLU(),
+        )
+        self._features_dim = self.image_extractor.features_dim + 64
+
+    def forward(self, observations: dict[str, torch.Tensor]) -> torch.Tensor:
+        image_feats = self.image_extractor(observations["image"])
+        scalar_feats = self.scalar_net(observations["scalars"])
+        return torch.cat([image_feats, scalar_feats], dim=1)
+
+
 class VisionBackbonePolicy(ActorCriticPolicy):
     def __init__(self, *args: Any, **kwargs: Any):
-        kwargs["features_extractor_class"] = VisionBackboneExtractor
+        kwargs["features_extractor_class"] = VisionScalarExtractor
         super().__init__(*args, **kwargs)
         
 class CustomPPO(OnPolicyAlgorithm):
@@ -69,7 +90,7 @@ class CustomPPO(OnPolicyAlgorithm):
         policy_kwargs: Optional[dict[str, Any]] = None,
         verbose: int = 0,
         seed: Optional[int] = None,
-        device: Union[torch.device, str] = "auto",
+        device: Union[torch.device, str] = "cuda:0",
         _init_setup_model: bool = True,
     ):
         super().__init__(

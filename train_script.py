@@ -8,7 +8,7 @@ import gymnasium as gym
 import retro
 import imageio.v2 as imageio
 from PIL import Image, ImageDraw, ImageFont
-
+from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import (
     DummyVecEnv,
     SubprocVecEnv,
@@ -18,6 +18,7 @@ from control import (
     DiscreteActionWrapper,
     LifeTerminationWrapper,
     ExtraInfoWrapper,
+    AuxObservationWrapper,
     RewardOverrideWrapper,
     InfoLogger,
     PreprocessObsWrapper,
@@ -30,6 +31,7 @@ def make_base_env(game: str, state: str):
     env = ExtraInfoWrapper(env)
     env = LifeTerminationWrapper(env)
     env = RewardOverrideWrapper(env)
+    env = AuxObservationWrapper(env)
     return env
 
 
@@ -170,6 +172,7 @@ def main():
         n_steps=512,
         batch_size=256,
         learning_rate=1e-4,
+        verbose=1,
         gamma=0.99,
         kl_coef=1,
         clip_range=0.5,

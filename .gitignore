@@ -90,4 +90,5 @@ lightning_logs/
 # Model outputs
 outputs/
 results/
+runs_smw/
 AGENTS.md

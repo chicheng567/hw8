@@ -165,6 +165,46 @@ class ExtraInfoWrapper(gym.Wrapper):
         return obs, reward, terminated, truncated, info
 
 
+class AuxObservationWrapper(gym.Wrapper):
+    """
+    Convert image observations into a dict that also exposes scalar features (step/time).
+    """
+
+    def __init__(self, env, step_normalizer: float = 4000.0, time_normalizer: float = 400.0):
+        super().__init__(env)
+        if not isinstance(env.observation_space, gym.spaces.Box):
+            raise TypeError("AuxObservationWrapper expects a Box observation space as the image input")
+        self.image_space = env.observation_space
+        self.step_normalizer = max(step_normalizer, 1.0)
+        self.time_normalizer = max(time_normalizer, 1.0)
+        scalar_low = np.full((2,), -np.inf, dtype=np.float32)
+        scalar_high = np.full((2,), np.inf, dtype=np.float32)
+        self.observation_space = gym.spaces.Dict(
+            {
+                "image": self.image_space,
+                "scalars": gym.spaces.Box(low=scalar_low, high=scalar_high, dtype=np.float32),
+            }
+        )
+        self._step_count = 0
+
+    def _make_obs(self, obs, info):
+        time_left = float(info.get("time_left", 0.0)) if isinstance(info, dict) else 0.0
+        time_feat = np.clip(time_left / self.time_normalizer, 0.0, 1.0)
+        step_feat = np.clip(self._step_count / self.step_normalizer, 0.0, 1.0)
+        scalars = np.array([step_feat, time_feat], dtype=np.float32)
+        return {"image": obs, "scalars": scalars}
+
+    def reset(self, **kwargs):
+        self._step_count = 0
+        obs, info = self.env.reset(**kwargs)
+        return self._make_obs(obs, info), info
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        self._step_count += 1
+        return self._make_obs(obs, info), reward, terminated, truncated, info
+
+
 class RewardOverrideWrapper(gym.Wrapper):
     """
     Replace environment reward with custom shaping
