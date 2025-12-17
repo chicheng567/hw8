@@ -57,6 +57,7 @@ def main():
         n_steps=512,
         batch_size=512,
         learning_rate=3e-4,
+        ent_coef=0.01,
         verbose=1,
         gamma=0.99,
         kl_coef=0,

@@ -213,11 +213,11 @@ class RewardOverrideWrapper(gym.Wrapper):
     def __init__(
         self,
         env,
-        progress_scale: float = 2e-2,
-        time_penalty: float = -0.25,
-        score_scale: float = 2,
-        death_penalty: float = -12.0,
-        timeout_penalty: float = -5.0,
+        progress_scale: float = 0.05,
+        time_penalty: float = -0.01,
+        score_scale: float = 0.5,
+        death_penalty: float = -10.0,
+        timeout_penalty: float = 0.0,
         win_reward: float = 400.0,
     ):
         super().__init__(env)
