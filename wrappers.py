@@ -297,7 +297,7 @@ class RewardOverrideWrapper(gym.Wrapper):
 class InfoLogger(gym.Wrapper):
     def step(self, action):
         obs, reward, terminated, truncated, info = super().step(action)
-        if reward > 0 or terminated:
+        if info.get("score", 0) > 0 or terminated:
             print(info)
         return obs, reward, terminated, truncated, info
 
@@ -324,4 +324,5 @@ def make_base_env(game: str, state: str):
     env = LifeTerminationWrapper(env)
     env = RewardOverrideWrapper(env)
     env = AuxObservationWrapper(env)
+    env = InfoLogger(env)
     return env
